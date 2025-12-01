@@ -1,0 +1,8 @@
+# Ignora directorul cu datele de antrenare (care sunt mari)
+ComandaMea/
+
+# Ignora fișierele temporare generate de MATLAB/Octave
+*.asv
+*.m~
+*.log
+*.bak

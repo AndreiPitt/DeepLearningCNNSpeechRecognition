@@ -1,5 +1,5 @@
 %% --- SCRIPT COMPLET PENTRU COLECTAREA DATELOR VOCALE (ComandaMea) ---
-% Rulati acest script de la capat la sfarsit, fara intreruperi.
+% Versiune ROBUSTĂ: Asigură lungimea corectă a fișierelor și pauze clare.
 
 % =========================================================================
 % 1. CONFIGURAREA INITIALA
@@ -9,6 +9,7 @@ fs = 16e3; % Frecventa de esantionare (16 kHz)
 segmentDuration = 1; % Durata fiecarui clip (1 secunda)
 segmentSamples = round(segmentDuration * fs); % Numarul de esantioane (16000)
 recObj = audiorecorder(fs, 16, 1); % Obiectul de înregistrare (Microfonul)
+pauseTime = 1.5; % Pauza intre inregistrari
 
 % COMENZILE TALE:
 comenzi = categorical(["masina","casa","dreapta","stanga","da","nu"]);
@@ -16,84 +17,89 @@ comenzi = categorical(["masina","casa","dreapta","stanga","da","nu"]);
 % FOLDERUL PRINCIPAL:
 datasetFolder = fullfile(pwd,"ComandaMea"); 
 
-disp("==========================================================");
-disp("PROIECT: ComandaMea - COLECTARE DATE LIVE");
-disp("Scriptul va rula automat in doua faze: Antrenare (40x) si Validare (10x).");
-disp("==========================================================");
+disp("===========================================================");
+disp("PROIECT: ComandaMea - COLECTARE DATE LIVE (ROBUST)");
+disp("!!! ATENȚIE: Rostiți comanda IMEDIAT după tonul scurt! !!!");
+disp("===========================================================");
 
 % =========================================================================
 % 2. FUNCTIE INTERNA PENTRU INREGISTRARE (NU MODIFICATI)
 % =========================================================================
 
-function colecteaza_date(comenzi, numExemple, targetFolder, recObj, segmentSamples, fs, datasetType)
-    disp(">>> START: Colectare set de " + upper(datasetType) + " (" + numExemple + "x/comanda) <<<");
-    if strcmpi(datasetType, 'validation')
-        disp("!!! ATENȚIE: Rostiti cuvintele UNIC, diferit de cele din TRAIN !!!");
+function colecteaza_date(comenzi, numExemple, targetFolder, recObj, segmentDuration, segmentSamples, fs, pauseTime, prefix)
+    
+    if ~exist(targetFolder, 'dir')
+        mkdir(targetFolder);
     end
-
-    for i = 1:numel(comenzi)
-        cmd = string(comenzi(i));
-        cmdFolder = fullfile(targetFolder, cmd);
-        if ~exist(cmdFolder,'dir'); mkdir(cmdFolder); end 
-
-        disp("----------------------------------------------------------");
-        disp("Comanda: " + upper(cmd) + " - " + datasetType);
+    
+    numComenzi = numel(comenzi);
+    contor_global = 1;
+    
+    for i = 1:numComenzi
+        comandaCurenta = char(comenzi(i));
+        folderCurent = fullfile(targetFolder, comandaCurenta);
         
-        for j = 1:numExemple
-            disp("Exemplul " + j + "/" + numExemple + ": Vorbește ACUM!");
-            recordblocking(recObj, 1.5); % Înregistrează 1.5 sec
-            x = getaudiodata(recObj); x = x(:);
+        if ~exist(folderCurent, 'dir')
+            mkdir(folderCurent);
+        end
+        
+        for exempluIdx = 1:numExemple
             
-            % Taie centrul la 1 secunda (16000 esantioane)
-            len = length(x);
-            startIdx = floor((len - segmentSamples)/2) + 1;
-            x = x(startIdx:startIdx + segmentSamples - 1);
+            disp(' ');
+            disp(['--- Faza ' upper(prefix) ' | Comanda: ' upper(comandaCurenta) ' | Exemplu ' num2str(exempluIdx) '/' num2str(numExemple) ' ---']);
             
-            % Normalizeaza volumul
-            x = x / (max(abs(x)) + 1e-6);
+            % 1. Semnal audio de pregătire (BIP)
+            beep(0.2); 
+            disp('*** Rostiți acum! ***');
             
-            % Salveaza fisierul
-            filename = fullfile(cmdFolder, cmd + "_" + datasetType(1) + j + ".wav");
-            audiowrite(filename, x, fs);
-            disp("Salvat: " + filename);
-            pause(0.2); 
+            % 2. Înregistrare fixă (1.0s)
+            recordblocking(recObj, segmentDuration);
+            audioData = getaudiodata(recObj);
+            
+            % 3. ROBUSTETE: Asigură exact 16000 de eșantioane
+            currentSamples = length(audioData);
+            if currentSamples > segmentSamples
+                % Trunchiere (tăiere)
+                audioData = audioData(1:segmentSamples);
+                disp(['  [INFO] Fila a fost tăiată de la ' num2str(currentSamples) ' la 16000 esantioane.']);
+            elseif currentSamples < segmentSamples
+                % Padding (umplere cu zerouri)
+                padding = segmentSamples - currentSamples;
+                audioData = [audioData; zeros(padding, 1)];
+                disp(['  [INFO] Fila a fost umplută de la ' num2str(currentSamples) ' la 16000 esantioane.']);
+            end
+            
+            % 4. Salvare fișier
+            afn = [comandaCurenta '_' prefix num2str(contor_global) '.wav'];
+            audiowrite(fullfile(folderCurent, afn), audioData, fs);
+            
+            contor_global = contor_global + 1;
+            
+            % Pauză clară pentru a vă pregăti
+            pause(pauseTime); 
         end
     end
-    disp(">>> Colectare " + upper(datasetType) + " finalizată! <<<");
+    disp(['--- Faza ' upper(prefix) ' finalizată cu ' num2str(contor_global-1) ' fișiere salvate. ---']);
 end
 
 % =========================================================================
-% 3. INREGISTRAREA SETULUI DE ANTRENARE (TRAIN)
+% 3. RULAREA FAZELOR (Antrenare si Validare)
 % =========================================================================
 
-numExemple_train = 40; 
+% 3A. INREGISTRAREA SETULUI DE ANTRENARE (TRAIN)
+numExemple_train = 60; % Mărit de la 40
 targetFolder_train = fullfile(datasetFolder, "train"); 
-colecteaza_date(comenzi, numExemple_train, targetFolder_train, recObj, segmentSamples, fs, "train");
+colecteaza_date(comenzi, numExemple_train, targetFolder_train, recObj, segmentDuration, segmentSamples, fs, pauseTime, "train");
 
-% =========================================================================
-% 4. INREGISTRAREA SETULUI DE VALIDARE (VALIDATION)
-% =========================================================================
-
-numExemple_validation = 10; 
+% 3B. INREGISTRAREA SETULUI DE VALIDARE (VALIDATION)
+numExemple_validation = 15; % Mărit de la 10
 targetFolder_validation = fullfile(datasetFolder, "validation"); 
-colecteaza_date(comenzi, numExemple_validation, targetFolder_validation, recObj, segmentSamples, fs, "validation");
+colecteaza_date(comenzi, numExemple_validation, targetFolder_validation, recObj, segmentDuration, segmentSamples, fs, pauseTime, "validation");
 
 % =========================================================================
-% 5. INSTRUCTIUNI FINALE
+% 4. INSTRUCTIUNI FINALE
 % =========================================================================
-
 disp(" ");
-disp("==========================================================");
-disp("!!! COLECTARE COMPLETĂ. STRUCTURA ESTE PREGATITA !!!");
-disp("==========================================================");
-disp("Pentru a finaliza setul de date, trebuie să faceți manual următoarele:");
-disp(" ");
-disp("1. Creati folderul de zgomot: " + fullfile(datasetFolder, "background"));
-disp("   - Mutati aici fisierele lungi de zgomot (din setul Google).");
-disp(" ");
-disp("2. Creati folderele pentru 'Necunoscute':");
-disp("   - " + fullfile(targetFolder_train, "unknown"));
-disp("   - " + fullfile(targetFolder_validation, "unknown"));
-disp(" ");
-disp("3. Mutati fisierele de 'unknown' (cuvintele in engleza) + cuvinte românești non-comandă în folderele 'unknown'.");
-disp(" ");
+disp("============================================================");
+disp("!!! COLECTARE COMENZI COMPLETĂ. VA URMA 'NECUNOSCUTE' !!!");
+disp("============================================================");

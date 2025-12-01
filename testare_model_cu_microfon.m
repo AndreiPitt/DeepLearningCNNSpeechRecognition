@@ -51,4 +51,3 @@ sound(x, fs); % Redă înregistrarea pentru verificare
 disp("Modelul prezice: " + string(label))
 disp("Încredere: " + num2str(maxScore, '%.4f'))
 disp("==========================================================");
-

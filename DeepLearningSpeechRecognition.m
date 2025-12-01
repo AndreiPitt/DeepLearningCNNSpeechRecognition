@@ -1,20 +1,19 @@
-%% --- SCRIPT FINAL STABIL (V14): CORECTAT PENTRU EROAREA DE DIMENSIUNI FINALE ---
-
 % Configurarea Mediului
 speedupExample = false; 
 rng default 
 
 % =========================================================================
-% 1. INCARCAREA DATELOR CUSTOM 
+% 1. INCARCAREA DATELOR CUSTOM SI FILTRAREA (Comenzi și Background)
 % =========================================================================
 
 datasetFolder = fullfile(pwd,"ComandaMea"); 
 
+% Setul de comenzi definit 
 comenzi = categorical(["masina","casa","dreapta","stanga","da","nu"]);
 background = categorical("background");
-fs = 16e3; 
+fs = 16e3; % Sample rate (16000 eșantioane pe secundă)
 segmentDuration = 1; 
-segmentSamples = fs; 
+segmentSamples = fs; % 1 secundă de eșantioane
 
 % --- 1A. INCARCAREA DATELOR DE COMANDA/UNKNOWN (TRAIN) ---
 adsTrainCommands = audioDatastore(fullfile(datasetFolder,"train"), ...
@@ -22,7 +21,7 @@ adsTrainCommands = audioDatastore(fullfile(datasetFolder,"train"), ...
     FileExtensions=".wav", ...
     LabelSource="foldernames");
 
-% Etichetare si Filtrare (neschimbată)
+% Etichetare si Filtrare (doar fișiere de 1s)
 isCommand = ismember(adsTrainCommands.Labels,comenzi);
 isUnknown = ~isCommand; 
 adsTrainCommands.Labels(isUnknown) = categorical("unknown");
@@ -43,6 +42,7 @@ disp("Date de antrenare incarcate si validate. Numar comenzi/unknown valide: " +
 
 
 % --- 1B. INCARCAREA DATELOR DE ZGOMOT (BACKGROUND) ---
+% Background-ul este lăsat ca fișiere lungi pentru segmentarea ulterioară.
 adsBkg = audioDatastore(fullfile(datasetFolder,"background"), ...
     FileExtensions=".wav"); 
 adsBkg.Labels = repmat(background, numel(adsBkg.Files), 1);
@@ -51,13 +51,13 @@ adsBkg.Labels = removecats(adsBkg.Labels);
 [adsBkgTrain, adsBkgValidation] = splitEachLabel(adsBkg, 0.85);
 
 
-% --- 1D. INCARCAREA SETULUI DE VALIDARE (VALIDATION) ---
+% --- 1C. INCARCAREA SETULUI DE VALIDARE (VALIDATION) ---
 adsValidationCommands = audioDatastore(fullfile(datasetFolder,"validation"), ...
     IncludeSubfolders=true, ...
     FileExtensions=".wav", ...
     LabelSource="foldernames");
 
-% Etichetare si Filtrare (neschimbată)
+% Etichetare si Filtrare
 isCommand = ismember(adsValidationCommands.Labels,comenzi);
 isUnknown = ~isCommand; 
 adsValidationCommands.Labels(isUnknown) = categorical("unknown");
@@ -75,11 +75,13 @@ adsValidationCommands = subset(adsValidationCommands, validSamplesValidation);
 TValidationCommands = adsValidationCommands.Labels; 
 disp("Date de validare incarcate si validate. Numar comenzi/unknown valide: " + numel(TValidationCommands));
 
+
 % =========================================================================
 % 2. PREGATIREA DATELOR PENTRU ANTRENARE (EXTRACTIA SPECTROGRAMELOR)
+% (Segmentare manuală a background-ului și prelucrarea comenzilor)
 % =========================================================================
 
-% Setam parametrii
+% Setam parametrii Spectrograma/MFCC (Bark Spectrum)
 frameDuration = 0.025; hopDuration = 0.010;
 FFTLength = 512; numBands = 50;
 
@@ -97,17 +99,15 @@ afe = audioFeatureExtractor( ...
 setExtractorParameters(afe,"barkSpectrum",NumBands=numBands,WindowNormalization=false);
 
 
-% --- FUNCTIA DE SEGMENTARE SI PRELUCRARE A BACKGROUND-ULUI ---
+% --- FUNCTIA DE SEGMENTARE BACKGROUND ---
 function [segments, labels] = segmentBackground(x, fs, segmentDuration, backgroundLabel)
     segmentSamples = round(segmentDuration * fs);
     overlap = 0; 
     
-    % Padding daca fisierul e prea scurt (desi a fost filtrat la train/validation)
     if size(x, 1) < segmentSamples
         x = [x; zeros(segmentSamples - size(x, 1), 1)];
     end
     
-    % Calculăm segmentele de 1s
     numSegments = floor(size(x, 1) / segmentSamples);
     segments = cell(numSegments, 1);
     
@@ -120,7 +120,7 @@ function [segments, labels] = segmentBackground(x, fs, segmentDuration, backgrou
     labels = repmat(backgroundLabel, numSegments, 1);
 end
 
-% --- FUNCTIA PIPELINE DE PRELUCRARE PENTRU COMENZI (fără segmentare) ---
+% --- FUNCTIA DE PRELUCRARE COMANDA (Padding + Spectrograma) ---
 function [featuresCell] = processCommand(audioData, segmentSamples, afe)
     % Padding
     paddedAudio = [zeros(floor((segmentSamples-size(audioData,1))/2),1); 
@@ -197,11 +197,12 @@ if size(XTrain, 4) ~= numel(TTrain)
     error('Eroare internă de programare: Dimensiunile Predictors (XTrain) și Targets (TTrain) nu se potrivesc după prelucrare!');
 end
 
+
 % =========================================================================
 % 3. DEFINIREA SI ANTRENAREA ARHITECTURII CNN
-% (Neschimbată)
 % =========================================================================
 
+% Calculul ponderilor (pentru a balansa clasele)
 classes = categories(TTrain);
 classWeights = 1./countcats(TTrain);
 classWeights = classWeights'/mean(classWeights);
@@ -211,6 +212,7 @@ timePoolSize = ceil(numHops/8);
 dropoutProb = 0.2;
 numF = 12;
 
+% Arhitectura Retelelei 
 layers = [
     imageInputLayer([numHops,afe.FeatureVectorLength])
     
@@ -232,6 +234,7 @@ layers = [
     fullyConnectedLayer(numClasses)
     softmaxLayer];
 
+% Optiunile de Antrenare 
 miniBatchSize = 128;
 validationFrequency = floor(numel(TTrain)/miniBatchSize);
 options = trainingOptions("adam", ...
@@ -256,21 +259,26 @@ disp(">>> Antrenarea s-a finalizat! <<<");
 % 4. EVALUAREA SI REZULTATELE
 % =========================================================================
 
+% Calculeaza predictiile pe setul de validare
 scores = minibatchpredict(trainedNet,XValidation);
 YValidation = scores2label(scores,classes,"auto");
 validationError = mean(YValidation ~= TValidation);
 
+% Calculeaza predictiile pe setul de antrenare
 scores = minibatchpredict(trainedNet,XTrain);
 YTrain = scores2label(scores,classes,"auto");
 trainError = mean(YTrain ~= TTrain);
 
+
 disp(["Eroare Antrenare: " + trainError*100 + " %";"Eroare Validare: " + validationError*100 + " %"])
 
+% Afisarea Matricei de Confuzie
 figure(Units="normalized",Position=[0.2,0.2,0.5,0.5]);
 cm = confusionchart(TValidation,YValidation, ...
     Title="Matricea de Confuzie pentru Validare", ...
     ColumnSummary="column-normalized",RowSummary="row-normalized");
 
+% CORECȚIE FINALĂ: Folosim variabila 'classes' definită dinamic
 sortClasses(cm, classes) 
 
 disp("Modelul este antrenat! Poti acum sa salvezi 'trainedNet' sau sa-l testezi pe fișiere noi.");

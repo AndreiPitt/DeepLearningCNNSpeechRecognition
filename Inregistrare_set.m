@@ -11,6 +11,13 @@ segmentSamples = round(segmentDuration * fs); % Numarul de esantioane (16000)
 recObj = audiorecorder(fs, 16, 1); % Obiectul de înregistrare (Microfonul)
 pauseTime = 1.5; % Pauza intre inregistrari
 
+% --- Configurarea tonului de start ---
+toneFreq = 1000; % Frecventa tonului in Hz
+toneDuration = 0.15; % Durata tonului in secunde
+t = linspace(0, toneDuration, round(fs * toneDuration));
+toneSignal = 0.5 * sin(2 * pi * toneFreq * t)'; % Generare semnal sinusoidal
+% ------------------------------------
+
 % COMENZILE TALE:
 comenzi = categorical(["masina","casa","dreapta","stanga","da","nu"]);
 
@@ -26,7 +33,7 @@ disp("===========================================================");
 % 2. FUNCTIE INTERNA PENTRU INREGISTRARE (NU MODIFICATI)
 % =========================================================================
 
-function colecteaza_date(comenzi, numExemple, targetFolder, recObj, segmentDuration, segmentSamples, fs, pauseTime, prefix)
+function colecteaza_date(comenzi, numExemple, targetFolder, recObj, segmentDuration, segmentSamples, fs, pauseTime, prefix, toneSignal)
     
     if ~exist(targetFolder, 'dir')
         mkdir(targetFolder);
@@ -49,7 +56,7 @@ function colecteaza_date(comenzi, numExemple, targetFolder, recObj, segmentDurat
             disp(['--- Faza ' upper(prefix) ' | Comanda: ' upper(comandaCurenta) ' | Exemplu ' num2str(exempluIdx) '/' num2str(numExemple) ' ---']);
             
             % 1. Semnal audio de pregătire (BIP)
-            beep(0.2); 
+            sound(toneSignal, fs); 
             disp('*** Rostiți acum! ***');
             
             % 2. Înregistrare fixă (1.0s)
@@ -69,8 +76,8 @@ function colecteaza_date(comenzi, numExemple, targetFolder, recObj, segmentDurat
                 disp(['  [INFO] Fila a fost umplută de la ' num2str(currentSamples) ' la 16000 esantioane.']);
             end
             
-            % 4. Salvare fișier
-            afn = [comandaCurenta '_' prefix num2str(contor_global) '.wav'];
+            % 4. Salvare fișier - CORECTIA ESTE AICI
+            afn = string(comandaCurenta) + "_" + prefix + num2str(contor_global) + ".wav";
             audiowrite(fullfile(folderCurent, afn), audioData, fs);
             
             contor_global = contor_global + 1;
@@ -87,14 +94,14 @@ end
 % =========================================================================
 
 % 3A. INREGISTRAREA SETULUI DE ANTRENARE (TRAIN)
-numExemple_train = 60; % Mărit de la 40
+numExemple_train = 60; 
 targetFolder_train = fullfile(datasetFolder, "train"); 
-colecteaza_date(comenzi, numExemple_train, targetFolder_train, recObj, segmentDuration, segmentSamples, fs, pauseTime, "train");
+colecteaza_date(comenzi, numExemple_train, targetFolder_train, recObj, segmentDuration, segmentSamples, fs, pauseTime, "train", toneSignal); % Argument adaugat
 
 % 3B. INREGISTRAREA SETULUI DE VALIDARE (VALIDATION)
-numExemple_validation = 15; % Mărit de la 10
+numExemple_validation = 15; 
 targetFolder_validation = fullfile(datasetFolder, "validation"); 
-colecteaza_date(comenzi, numExemple_validation, targetFolder_validation, recObj, segmentDuration, segmentSamples, fs, pauseTime, "validation");
+colecteaza_date(comenzi, numExemple_validation, targetFolder_validation, recObj, segmentDuration, segmentSamples, fs, pauseTime, "validation", toneSignal); % Argument adaugat
 
 % =========================================================================
 % 4. INSTRUCTIUNI FINALE

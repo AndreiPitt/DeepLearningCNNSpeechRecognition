@@ -11,6 +11,13 @@ segmentSamples = round(segmentDuration * fs);
 recObj = audiorecorder(fs, 16, 1); 
 pauseTime = 1.5; % Pauza intre inregistrari
 
+% --- CORECTIE: Configurarea tonului de start (pentru a înlocui 'beep(0.2)') ---
+toneFreq = 1000; % Frecventa tonului in Hz
+toneDuration = 0.15; % Durata tonului in secunde
+t = linspace(0, toneDuration, round(fs * toneDuration));
+toneSignal = 0.5 * sin(2 * pi * toneFreq * t)'; % Generare semnal sinusoidal
+% -----------------------------------------------------------------------------
+
 datasetFolder = fullfile(pwd,"ComandaMea"); 
 
 disp("============================================================");
@@ -22,7 +29,7 @@ disp("============================================================");
 % 2. LISTELE DE CUVINTE (Mărite pentru o bază mai solidă)
 % =========================================================================
 
-% 60 de cuvinte UNICE pentru Antrenare (TRAIN) - Mărit de la 30
+% 60 de cuvinte UNICE pentru Antrenare (TRAIN)
 cuvinte_train = [
     "masa", "scaun", "telefon", "astazi", "acolo", "mereu", "carte", "scoala", "verde", "albastru", ...
     "numai", "niciodata", "frumos", "rau", "repede", "incet", "dulce", "acru", "tare", "moale", ...
@@ -32,7 +39,7 @@ cuvinte_train = [
     "creion", "hartie", "lipici", "vopsea", "tractor", "avion", "tren", "vapor", "racheta", "bicicleta"
 ];
 
-% 15 de cuvinte UNICE pentru Validare (VALIDATION) - Mărit de la 10
+% 15 de cuvinte UNICE pentru Validare (VALIDATION)
 cuvinte_validation = [
     "cainele", "pisica", "urias", "pitic", "ziua", "noaptea", "vesel", "trist", "cald", "rece", ...
     "sare", "piper", "orez", "faina", "sticla"
@@ -42,7 +49,7 @@ cuvinte_validation = [
 % 3. FUNCTIE INTERNA PENTRU INREGISTRARE NECUNOSCUTĂ
 % =========================================================================
 
-function colecteaza_unknown(cuvinte, targetFolder, recObj, segmentDuration, segmentSamples, fs, pauseTime, prefix)
+function colecteaza_unknown(cuvinte, targetFolder, recObj, segmentDuration, segmentSamples, fs, pauseTime, prefix, toneSignal)
     
     folderCurent = fullfile(targetFolder, "unknown");
     if ~exist(folderCurent, 'dir')
@@ -58,8 +65,8 @@ function colecteaza_unknown(cuvinte, targetFolder, recObj, segmentDuration, segm
         disp(' ');
         disp(['--- Faza ' upper(prefix) ' | Cuvant: "' cuvantCurent '" | Exemplu ' num2str(i) '/' num2str(numCuvinte) ' ---']);
         
-        % 1. Semnal audio de pregătire (BIP)
-        beep(0.2); 
+        % 1. Semnal audio de pregătire (BIP) - CORECTIE APLICATĂ AICI
+        sound(toneSignal, fs); 
         disp('*** Rostiți acum! ***');
         
         % 2. Înregistrare fixă (1.0s)
@@ -79,8 +86,8 @@ function colecteaza_unknown(cuvinte, targetFolder, recObj, segmentDuration, segm
             disp(['  [INFO] Fila a fost umplută de la ' num2str(currentSamples) ' la 16000 esantioane.']);
         end
         
-        % 4. Salvare fișier
-        afn = ['unknown_' prefix num2str(contor_global) '_' cuvantCurent '.wav'];
+        % 4. Salvare fișier - CORECTIE PENTRU AFN (nume de fișier) APLICATĂ AICI
+        afn = "unknown_" + prefix + num2str(contor_global) + "_" + cuvantCurent + ".wav";
         audiowrite(fullfile(folderCurent, afn), audioData, fs);
         
         contor_global = contor_global + 1;
@@ -98,11 +105,11 @@ end
 
 % 4A. Colectare set de Antrenare (TRAIN/unknown)
 targetFolder_train = fullfile(datasetFolder, "train");
-colecteaza_unknown(cuvinte_train, targetFolder_train, recObj, segmentDuration, segmentSamples, fs, pauseTime, "train");
+colecteaza_unknown(cuvinte_train, targetFolder_train, recObj, segmentDuration, segmentSamples, fs, pauseTime, "train", toneSignal); % Argument adaugat
 
 % 4B. Colectare set de Validare (VALIDATION/unknown)
 targetFolder_validation = fullfile(datasetFolder, "validation");
-colecteaza_unknown(cuvinte_validation, targetFolder_validation, recObj, segmentDuration, segmentSamples, fs, pauseTime, "val");
+colecteaza_unknown(cuvinte_validation, targetFolder_validation, recObj, segmentDuration, segmentSamples, fs, pauseTime, "val", toneSignal); % Argument adaugat
 
 
 % =========================================================================
